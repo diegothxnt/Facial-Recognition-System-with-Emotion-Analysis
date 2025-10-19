@@ -40,6 +40,21 @@ def initialize_database():
             FOREIGN KEY (persona_id) REFERENCES personas (id)
         )
     ''')
-  
+   conn.commit()
+    conn.close()
+
+if __name__ == "__main__":
+    # Crear directorios necesarios
+    os.makedirs('data/embeddings', exist_ok=True)
+    os.makedirs('models', exist_ok=True)
+    
+    # Inicializar base de datos
+    initialize_database()
+    
+    # Iniciar aplicación
+    root = tk.Tk()
+    app = MainWindow(root)
+    root.mainloop()
 
    
+
