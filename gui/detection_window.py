@@ -260,3 +260,144 @@ class DetectionWindow:
         
         
         self.camera_label.configure(image='')
+
+    def procesar_deteccion(self):
+        """Procesar frame por frame para detección con IA - OPTIMIZADO"""
+        if not self.detection_enabled or self.cap is None:
+            return
+        
+        try:
+            ret, frame = self.cap.read()
+            if ret:
+                self.frame_count += 1
+                current_time = time.time()
+                
+                
+                frame_small = cv2.resize(frame, (320, 240))
+                frame_display = frame.copy()
+                
+                
+                gray = cv2.cvtColor(frame_small, cv2.COLOR_BGR2GRAY)
+                face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
+                faces = face_cascade.detectMultiScale(gray, 1.1, 4, minSize=(50, 50))
+                
+                nombre = "Desconocido"
+                confianza = 0.0
+                emocion = "---"
+                confianza_emocion = 0.0
+                persona_id = None
+                
+                
+                should_recognize = (self.frame_count % 10 == 0 or 
+                                  current_time - self.last_recognition_time > 0.5)
+                
+                if should_recognize and len(faces) > 0:
+                    self.last_recognition_time = current_time
+                    
+                    persona_id, nombre, confianza = self.face_system.reconocer_rostro(frame)
+                    print(f"🎭 Reconocimiento IA: {nombre} ({confianza:.2f})")
+                
+                
+                for (x, y, w, h) in faces:
+                    
+                    scale_x = frame.shape[1] / frame_small.shape[1]
+                    scale_y = frame.shape[0] / frame_small.shape[0]
+                    x_orig = int(x * scale_x)
+                    y_orig = int(y * scale_y)
+                    w_orig = int(w * scale_x)
+                    h_orig = int(h * scale_y)
+                    
+                    
+                    try:
+                        face_roi = frame[y_orig:y_orig+h_orig, x_orig:x_orig+w_orig]
+                        if face_roi.size > 0:
+                            emocion, confianza_emocion = self.emotion_analyzer.predecir_emocion(face_roi)
+                            print(f"😊 Emoción detectada: {emocion} ({confianza_emocion:.2f})")
+                    except Exception as e:
+                        print(f"❌ Error en análisis de emociones: {e}")
+                        emocion, confianza_emocion = "Error", 0.0
+                    
+                    
+                    if nombre != "Desconocido" and confianza > 0.6:
+                        color = (0, 255, 0)  
+                        texto = f"{nombre} ({confianza:.1%})"
+                        if emocion != "---":
+                            texto += f" | {emocion}"
+                    else:
+                        color = (0, 0, 255)  
+                        texto = "No registrado"
+                        if emocion != "---":
+                            texto += f" | {emocion}"
+                    
+                   
+                    cv2.rectangle(frame_display, (x_orig, y_orig), 
+                                (x_orig+w_orig, y_orig+h_orig), color, 2)
+                    cv2.putText(frame_display, texto, (x_orig, y_orig-10),
+                              cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
+                
+               
+                self.actualizar_interfaz(nombre, emocion, max(confianza, confianza_emocion), persona_id)
+                
+                
+                frame_display = cv2.resize(frame_display, (640, 480))
+                rgb_frame = cv2.cvtColor(frame_display, cv2.COLOR_BGR2RGB)
+                img = Image.fromarray(rgb_frame)
+                imgtk = ImageTk.PhotoImage(image=img)
+                
+                
+                self.current_image = imgtk
+                self.camera_label.imgtk = imgtk
+                self.camera_label.configure(image=imgtk)
+            
+        except Exception as e:
+            print(f"Error en procesamiento IA: {e}")
+            
+        
+        
+        if self.detection_enabled:
+            self.window.after(15, self.procesar_deteccion)
+    
+    def actualizar_interfaz(self, nombre, emocion, confianza, persona_id):
+        """Actualizar la interfaz con la información de detección"""
+        tiempo_actual = time.strftime("%H:%M:%S")
+        
+        
+        self.info_labels['persona'].config(text=nombre)
+        self.info_labels['emocion'].config(text=emocion)
+        
+        if confianza > 0:
+            self.info_labels['confianza'].config(text=f"{confianza:.1%}")
+        else:
+            self.info_labels['confianza'].config(text="---")
+            
+        self.info_labels['tiempo'].config(text=tiempo_actual)
+        
+        
+        if persona_id is not None and nombre != "Desconocido" and confianza > 0.7:
+            try:
+                self.db.guardar_deteccion_emocion(persona_id, emocion, confianza)
+                
+                
+                self.history_tree.insert(
+                    '', 0,
+                    values=(tiempo_actual, nombre, emocion, f"{confianza:.1%}")
+                )
+                
+                
+                if len(self.history_tree.get_children()) > 50:
+                    self.history_tree.delete(self.history_tree.get_children()[-1])
+                    
+            except Exception as e:
+                print(f"Error al guardar en BD: {e}")
+    
+    def cerrar(self):
+        """Cerrar la ventana y liberar recursos"""
+        self.detener_deteccion()
+        self.window.destroy()
+
+
+if __name__ == "__main__":
+    root = tk.Tk()
+    root.withdraw()
+    app = DetectionWindow(root)
+    root.mainloop() 
