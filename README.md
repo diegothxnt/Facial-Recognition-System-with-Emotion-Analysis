@@ -50,3 +50,7 @@ pip install -r requirements.txt
 
 ###Ejecucion 
 python main.py
+
+
+Elaborado por Diego Rojas.
+Materia: Inteligencia Artificial.
